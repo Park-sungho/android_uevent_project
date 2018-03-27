@@ -24,6 +24,7 @@
 #include <linux/xlog.h>
 #include "../camera/kd_camera_hw.h"
 #include <asm/system.h>
+#include <linux/switch.h> /*parksungho, add the switch driver*/
 #include "kd_imgsensor.h"
 #include "kd_imgsensor_define.h"
 #include "kd_camera_feature.h"
@@ -107,6 +108,9 @@ static CAMERA_DUAL_CAMERA_SENSOR_ENUM g_invokeSocketIdx[KDIMGSENSOR_MAX_INVOKE_D
 static char g_invokeSensorNameStr[KDIMGSENSOR_MAX_INVOKE_DRIVERS][32] = {KDIMGSENSOR_NOSENSOR,KDIMGSENSOR_NOSENSOR};
 static wait_queue_head_t kd_sensor_wait_queue;
 bool setExpGainDoneFlag = 0;
+
+/*parksungho, add the switch driver*/
+static struct switch_dev gSensorMountFlag;
 /*=============================================================================
 =============================================================================*/
 /*******************************************************************************
@@ -1437,6 +1441,20 @@ struct i2c_driver CAMERA_HW_i2c_driver = {
 ********************************************************************************/
 static int CAMERA_HW_probe(struct platform_device *pdev)
 {
+    int ret = 0;
+    /*parksungho, add the switch driver*/
+    cam_f_insert_data.name = "SensorMount";
+    cam_f_insert_data.index = 0;
+	cam_f_insert_data.state = 1;
+
+    ret = switch_dev_register(&gSensorMountFlag);
+    if (ret) {
+        printk("%s() switch_dev_register error (%d)\n", __func__, ret);
+        return 1;
+    }
+	switch_set_state((struct switch_dev *)&gSensorMountFlag, 1);
+    //]parksungho
+
     return i2c_add_driver(&CAMERA_HW_i2c_driver);
 }
 /*******************************************************************************
@@ -1444,6 +1462,9 @@ static int CAMERA_HW_probe(struct platform_device *pdev)
 ********************************************************************************/
 static int CAMERA_HW_remove(struct platform_device *pdev)
 {
+    /*parksungho, add the switch driver*/
+    switch_dev_unregister(&gSensorMountFlag);
+
     i2c_del_driver(&CAMERA_HW_i2c_driver);
     return 0;
 }
@@ -1499,6 +1520,30 @@ static int  CAMERA_HW_Reg_Debug( struct file *file, const char *buffer, unsigned
     }
     return count;
 }
+
+#if defined(OEM_SENSOR_DRIVER)
+/*parksungho, add the switch driver*/
+int kd_set_oem_sensor_mount(int sensorGpio, int PwrType, int Val)
+{
+    int ret = 0;
+
+
+	if (gpio_is_valid(sensorGpio)) {
+    	gpio_direction_input(sensorGpio);
+
+        ret = gpio_get_value(sensorGpio);
+        if (ret == 0) {
+        	switch_set_state((struct switch_dev *)&gSensorMountFlag, 1)
+		} else {
+			switch_set_state((struct switch_dev *)&gSensorMountFlag, 0)
+		}
+    }
+
+    return ret;
+}
+EXPORT_SYMBOL(kd_set_oem_sensor_mount);
+#endif	/*  OEM_SENSOR_DRIVER */
+
 /*=======================================================================
   * platform driver
   *=======================================================================*/
