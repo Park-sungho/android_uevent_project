@@ -32,6 +32,8 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import android.os.UEventObserver; /*parksungho, add the switch driver*/
+
 /**
  * CameraService is the system_server analog to the camera service running in mediaserver.
  *
@@ -50,6 +52,14 @@ public class CameraService extends SystemService implements Handler.Callback {
     // Handler message codes
     private static final int MSG_SWITCH_USER = 1;
     private static final int RETRY_DELAY_TIME = 20; //ms
+
+    /*parksungho, add the switch driver*/
+    private static final String OEM_SENSOR_UEVENT = "DEVPATH=/devices/virtual/switch/SensorMount";
+    private static final java.lang.String ACTION_OEM_CAMERA_UPDATE = "android.intent.action.OEM_CAMERA_UPDATE";
+    private static final java.lang.String ACTION_OEM_FCAMERA_UPDATE = "android.intent.action.OEM_FCAMERA_UPDATE";
+
+    private String mStrInsertCamera;
+    //]parksungho
     private final Context mContext;
     private final ServiceThread mHandlerThread;
     private final Handler mHandler;
@@ -68,7 +78,43 @@ public class CameraService extends SystemService implements Handler.Callback {
         mHandlerThread = new ServiceThread(TAG, Process.THREAD_PRIORITY_DISPLAY, /*allowTo*/false);
         mHandlerThread.start();
         mHandler = new Handler(mHandlerThread.getLooper(), this);
+
+        /*parksungho, add the switch driver*/
+        mObserver.startObserving(OEM_SENSOR_UEVENT);
+        //]parksungho
     }
+
+
+    /*parksungho, add the switch driver*/
+    private final UEventObserver mObserver = new UEventObserver() {
+	@Override
+	public void onUEvent(UEventObserver.UEvent event) {
+		try {
+	               synchronized (mLock) {
+		                sendOemCameraIntentLocked(event.get("SWITCH_STATE").trim());
+	        	}
+	   	} catch (NumberFormatException e) {
+	        	Slog.e(TAG, "uevent failed, e="+e.toString());
+		}
+	}
+    };
+
+    private void sendOemCameraIntentLocked(String sensorMountData) {
+        final Intent intent = new Intent(ACTION_OEM_SENSOR_MOUNT);
+
+        intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY | Intent.FLAG_RECEIVER_REPLACE_PENDING);
+
+        intent.putExtra("SENSOR_MOUNT", sensorMountData);
+
+        mHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                ActivityManagerNative.broadcastStickyIntent(intent, null, UserHandle.USER_ALL);
+            }
+        });
+    }
+    //]parksungho
+    
     @Override
     public boolean handleMessage(Message msg) {
         switch(msg.what) {
